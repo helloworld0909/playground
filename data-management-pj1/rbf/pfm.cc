@@ -1,12 +1,11 @@
 #include "pfm.h"
 #include <fstream>
 #include <iostream>
-#include <vector>
+#include <cstdio>
 
 using namespace std;
 
-#define DATA_PATH "../data"
-#define HEADER_NAME "header"
+const string DATA_PATH = "";
 
 PagedFileManager* PagedFileManager::_pf_manager = 0;
 
@@ -21,7 +20,6 @@ PagedFileManager* PagedFileManager::instance()
 
 PagedFileManager::PagedFileManager()
 {
-	
 }
 
 
@@ -32,13 +30,21 @@ PagedFileManager::~PagedFileManager()
 
 RC PagedFileManager::createFile(const string &fileName)
 {
-    return -1;
+    fstream page(DATA_PATH + fileName, ios::in);
+    if (page) {
+        return -1;
+    } else {
+        page.close();
+        ofstream page(DATA_PATH + fileName);
+        page.close();
+        return 0;
+    }
 }
 
 
 RC PagedFileManager::destroyFile(const string &fileName)
 {
-    return -1;
+    return remove(fileName.c_str());
 }
 
 
