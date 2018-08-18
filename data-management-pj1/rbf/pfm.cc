@@ -1,4 +1,12 @@
 #include "pfm.h"
+#include <fstream>
+#include <iostream>
+#include <vector>
+
+using namespace std;
+
+#define DATA_PATH "../data"
+#define HEADER_NAME "header"
 
 PagedFileManager* PagedFileManager::_pf_manager = 0;
 
@@ -13,6 +21,7 @@ PagedFileManager* PagedFileManager::instance()
 
 PagedFileManager::PagedFileManager()
 {
+	
 }
 
 
