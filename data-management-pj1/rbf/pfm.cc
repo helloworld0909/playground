@@ -59,48 +59,12 @@ RC PagedFileManager::destroyFile(const string &fileName)
 
 RC PagedFileManager::openFile(const string &fileName, FileHandle &fileHandle)
 {
-    if (fileHandle.file.is_open() || !isFileExists(fileName))
-    {
-        return FAIL;
-    }
-
-    fileHandle.file.open(fileName, ios::in | ios::out | ios::binary);
-    if (!fileHandle.file)
-    {
-        return FAIL;
-    }
-
-    byte header[PAGE_SIZE];
-    fileHandle.file.read(header, PAGE_SIZE);
-
-    if (header[0] != IDENTIFIER)
-    {
-        return FAIL;
-    }
-
-    fileHandle.numOfPages = header[1] | header[2] << 8;
-    fileHandle.readPageCounter = header[3] | header[4] << 8;
-    fileHandle.writePageCounter = header[5] | header[6] << 8;
-    fileHandle.appendPageCounter = header[7] | header[8] << 8;
-
-    return SUCCESS;
+    return fileHandle.openFile(fileName);
 }
 
 RC PagedFileManager::closeFile(FileHandle &fileHandle)
 {
-    if (!fileHandle.file.is_open())
-    {
-        return FAIL;
-    }
-    fileHandle.file.seekp(sizeof(IDENTIFIER), ios::beg);
-
-    fileHandle.file.write((char *)&fileHandle.numOfPages, sizeof(unsigned));
-    fileHandle.file.write((char *)&fileHandle.readPageCounter, sizeof(unsigned));
-    fileHandle.file.write((char *)&fileHandle.writePageCounter, sizeof(unsigned));
-    fileHandle.file.write((char *)&fileHandle.appendPageCounter, sizeof(unsigned));
-
-    fileHandle.file.close();
-    return SUCCESS;
+    return fileHandle.closeFile();
 }
 
 FileHandle::FileHandle()
@@ -112,21 +76,89 @@ FileHandle::FileHandle()
 
 FileHandle::~FileHandle()
 {
+    closeFile();
+}
+
+RC FileHandle::openFile(const string &fileName)
+{
+    if (file.is_open() || !isFileExists(fileName))
+    {
+        return FAIL;
+    }
+
+    file.open(fileName, ios::in | ios::out | ios::binary);
+    if (!file.is_open())
+    {
+        return FAIL;
+    }
+
+    byte header[PAGE_SIZE];
+    file.read(header, PAGE_SIZE);
+
+    if (header[0] != IDENTIFIER)
+    {
+        return FAIL;
+    }
+    numOfPages = (unsigned)*(header + sizeof(IDENTIFIER));
+    readPageCounter = (unsigned)*(header + sizeof(IDENTIFIER) + 1 * sizeof(unsigned));
+    writePageCounter = (unsigned)*(header + sizeof(IDENTIFIER) + 2 * sizeof(unsigned));
+    appendPageCounter = (unsigned)*(header + sizeof(IDENTIFIER) + 3 * sizeof(unsigned));
+
+    return SUCCESS;
+}
+
+RC FileHandle::closeFile()
+{
+    if (!file.is_open())
+    {
+        return FAIL;
+    }
+    file.seekp(sizeof(IDENTIFIER), ios::beg);
+
+    file.write((char *)&numOfPages, sizeof(unsigned));
+    file.write((char *)&readPageCounter, sizeof(unsigned));
+    file.write((char *)&writePageCounter, sizeof(unsigned));
+    file.write((char *)&appendPageCounter, sizeof(unsigned));
+
+    file.close();
+    return SUCCESS;
 }
 
 RC FileHandle::readPage(PageNum pageNum, void *data)
 {
-    return -1;
+    if (!file.is_open() || pageNum > getNumberOfPages())
+    {
+        return FAIL;
+    }
+    file.seekg((pageNum + 1) * PAGE_SIZE, ios::beg);
+    file.read((char *)data, PAGE_SIZE);
+    readPageCounter++;
+    return SUCCESS;
 }
 
 RC FileHandle::writePage(PageNum pageNum, const void *data)
 {
-    return -1;
+    if (!file.is_open() || pageNum > getNumberOfPages())
+    {
+        return FAIL;
+    }
+    file.seekp((pageNum + 1) * PAGE_SIZE, ios::beg);
+    file.write((const char *)data, PAGE_SIZE);
+    writePageCounter++;
+    return SUCCESS;
 }
 
 RC FileHandle::appendPage(const void *data)
 {
-    return -1;
+    if (!file.is_open())
+    {
+        return FAIL;
+    }
+    file.seekp(0, ios::end);
+    file.write((const char *)data, PAGE_SIZE);
+    numOfPages++;
+    appendPageCounter++;
+    return SUCCESS;
 }
 
 unsigned FileHandle::getNumberOfPages()
@@ -136,5 +168,8 @@ unsigned FileHandle::getNumberOfPages()
 
 RC FileHandle::collectCounterValues(unsigned &readPageCount, unsigned &writePageCount, unsigned &appendPageCount)
 {
-    return -1;
+    readPageCount = readPageCounter;
+    writePageCount = writePageCounter;
+    appendPageCount = appendPageCounter;
+    return SUCCESS;
 }

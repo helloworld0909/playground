@@ -54,6 +54,8 @@ class FileHandle
 
     fstream file;
     unsigned numOfPages = 0;
+    RC openFile(const string &fileName);
+    RC closeFile();
 };
 
 #endif
