@@ -126,7 +126,7 @@ RC FileHandle::closeFile()
 
 RC FileHandle::readPage(PageNum pageNum, void *data)
 {
-    if (!file.is_open() || pageNum > getNumberOfPages())
+    if (!file.is_open() || pageNum >= getNumberOfPages())
     {
         return FAIL;
     }
@@ -138,7 +138,7 @@ RC FileHandle::readPage(PageNum pageNum, void *data)
 
 RC FileHandle::writePage(PageNum pageNum, const void *data)
 {
-    if (!file.is_open() || pageNum > getNumberOfPages())
+    if (!file.is_open() || pageNum >= getNumberOfPages())
     {
         return FAIL;
     }
