@@ -57,7 +57,54 @@ RC RecordBasedFileManager::readRecord(FileHandle &fileHandle, const vector<Attri
 
 RC RecordBasedFileManager::printRecord(const vector<Attribute> &recordDescriptor, const void *data)
 {
-    return -1;
+    const int FIELD_WIDTH = 10;
+    unsigned bytesOfNullIndicator = computeBytesOfNullIndicator(recordDescriptor);
+    const byte *pFlag = (const byte *)data;
+    const byte *pField = pFlag + bytesOfNullIndicator;
+    byte mask = 0x01;
+
+    cout.setf(std::ios::left);
+    for (unsigned i = 0; i < recordDescriptor.size(); i++)
+    {
+        Attribute attr = recordDescriptor[i];
+        cout << attr.name << ": ";
+
+        unsigned byteOffset = i / 8;
+        unsigned pos = 7 - i % 8; // First flag is at pos 8;
+        byte newMask = mask << pos;
+        bool isNull = (*(pFlag + byteOffset) & newMask) == newMask;
+
+        cout.width(FIELD_WIDTH);
+        if (!isNull)
+        {
+            switch (attr.type)
+            {
+            case TypeInt:
+                cout << *((const uint32_t *)pField);
+                pField += attr.length;
+
+                break;
+
+            case TypeReal:
+                cout << *((const float *)pField);
+                pField += attr.length;
+                break;
+            case TypeVarChar:
+                uint32_t lenVar = *((const uint32_t *)pField);
+                pField += 4;
+                string value(pField, lenVar);
+                cout << value;
+                pField += lenVar;
+                break;
+            }
+        }
+        else
+        {
+            cout << "NULL";
+        }
+    }
+    cout << endl;
+    return SUCCESS;
 }
 
 unsigned RecordBasedFileManager::computeBytesOfNullIndicator(const vector<Attribute> &recordDescriptor)
