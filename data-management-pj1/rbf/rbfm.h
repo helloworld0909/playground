@@ -9,6 +9,10 @@
 
 using namespace std;
 
+const unsigned LEN_FIELD_LENGTH = sizeof(unsigned);
+const unsigned LEN_RECORD_LENGTH = sizeof(unsigned);
+const unsigned LEN_RECORD_OFFSET = sizeof(unsigned);
+
 // Record ID
 typedef struct
 {
@@ -104,6 +108,9 @@ public:
   // (e.g., age: 24  height: 6.1  salary: 9000
   //        age: NULL  height: 7.5  salary: 7500)
   RC printRecord(const vector<Attribute> &recordDescriptor, const void *data);
+
+  unsigned computeBytesOfNullIndicator(const vector<Attribute> &recordDescriptor);
+  unsigned computeSpace(const vector<Attribute> &recordDescriptor, const void *data);
 
 /******************************************************************************************************************************************************************
 IMPORTANT, PLEASE READ: All methods below this comment (other than the constructor and destructor) are NOT required to be implemented for the part 1 of the project
