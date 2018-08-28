@@ -52,6 +52,7 @@ RC RecordBasedFileManager::insertRecord(FileHandle &fileHandle, const vector<Att
     {
         return FAIL;
     }
+    return SUCCESS;
 }
 
 RC RecordBasedFileManager::readRecord(FileHandle &fileHandle, const vector<Attribute> &recordDescriptor, const RID &rid, void *data)
@@ -160,7 +161,7 @@ PageNum RecordBasedFileManager::getFreePageNum(FileHandle &fileHandle, const uns
     {
         fileHandle.readPage(dirNum, dir);
         numEntry = *((PageNum *)(dir + PAGE_SIZE - 2 * SIZE_PAGE_NUM));
-        for (int i = 0; i < numEntry; i++)
+        for (unsigned i = 0; i < numEntry; i++)
         {
             PageNum pageNum = *((PageNum *)(dir + SIZE_DIR_ENTRY * i));
             unsigned freespace = *((unsigned *)(dir + SIZE_DIR_ENTRY * i + SIZE_PAGE_NUM));
