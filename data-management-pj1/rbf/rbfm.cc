@@ -67,7 +67,6 @@ RC RecordBasedFileManager::insertRecord(FileHandle &fileHandle, const vector<Att
     byte *pLastRecordPos = tail - numRecord * SIZE_RECORD_POS;
     unsigned offset = 0;
     unsigned length = neededSpace - SIZE_RECORD_POS;
-    cout << length << endl;
     if (numRecord > 0)
     {
         offset = *((unsigned *)pLastRecordPos) + *((unsigned *)(pLastRecordPos + SIZE_RECORD_OFFSET));
@@ -78,15 +77,12 @@ RC RecordBasedFileManager::insertRecord(FileHandle &fileHandle, const vector<Att
     //Write record
     byte *pRecord = page + offset;
     transformRecord(recordDescriptor, data, pRecord);
-    cout << "write record" << endl;
 
     //Num of records add one
     *((unsigned *)tail) += 1;
 
     //Update page
     fileHandle.writePage(freePageNum, page);
-
-    cout << "page updated" << endl;
 
     //Update RID
     rid.pageNum = freePageNum;
