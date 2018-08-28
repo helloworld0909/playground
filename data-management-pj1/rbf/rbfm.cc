@@ -49,14 +49,12 @@ RC RecordBasedFileManager::closeFile(FileHandle &fileHandle)
 RC RecordBasedFileManager::insertRecord(FileHandle &fileHandle, const vector<Attribute> &recordDescriptor, const void *data, RID &rid)
 {
     unsigned neededSpace = computeSpace(recordDescriptor, data);
-    cout << "neededSpace: " << neededSpace << endl;
     if (neededSpace > PAGE_SIZE - SIZE_NUM_RECORD)
     {
         return FAIL;
     }
 
     PageNum freePageNum = getFreePageNum(fileHandle, neededSpace);
-    cout << "freePageNum: " << freePageNum << endl;
 
     byte page[PAGE_SIZE];
     fileHandle.readPage(freePageNum, page);
@@ -93,7 +91,6 @@ RC RecordBasedFileManager::insertRecord(FileHandle &fileHandle, const vector<Att
 
 RC RecordBasedFileManager::readRecord(FileHandle &fileHandle, const vector<Attribute> &recordDescriptor, const RID &rid, void *data)
 {
-    cout << "RID: " << rid.pageNum << "," << rid.slotNum << endl;
     byte page[PAGE_SIZE];
     fileHandle.readPage(rid.pageNum, page);
 
@@ -102,8 +99,6 @@ RC RecordBasedFileManager::readRecord(FileHandle &fileHandle, const vector<Attri
     byte *pRecordPos = tail - (rid.slotNum + 1) * SIZE_RECORD_POS;
     unsigned offset = *((unsigned *)pRecordPos);
     unsigned length = *((unsigned *)(pRecordPos + SIZE_RECORD_OFFSET));
-    cout << "offset: " << offset << endl;
-    cout << "length: " << length << endl;
     if (length <= 0)
     {
         return FAIL;
@@ -259,9 +254,11 @@ PageNum RecordBasedFileManager::getFreePageNum(FileHandle &fileHandle, const uns
         for (unsigned i = 0; i < numEntry; i++)
         {
             PageNum pageNum = *((PageNum *)(dir + SIZE_DIR_ENTRY * i));
-            unsigned freespace = *((unsigned *)(dir + SIZE_DIR_ENTRY * i + SIZE_PAGE_NUM));
-            if (freespace >= neededSpace)
+            unsigned *pFreespace = (unsigned *)(dir + SIZE_DIR_ENTRY * i + SIZE_PAGE_NUM);
+            if (*pFreespace >= neededSpace)
             {
+                *pFreespace -= neededSpace;
+                fileHandle.writePage(dirNum, dir);
                 return pageNum;
             }
         }
@@ -287,47 +284,24 @@ PageNum RecordBasedFileManager::getFreePageNum(FileHandle &fileHandle, const uns
     {
         byte newDir[PAGE_SIZE] = {0};
         *((PageNum *)newDir) = newPageNum;
-        *((unsigned *)(newDir + SIZE_PAGE_NUM)) = MAX_FREESPACE;
-        *((PageNum *)(newDir + PAGE_SIZE - 2 * SIZE_PAGE_NUM)) = 1;
+        *((unsigned *)(newDir + SIZE_PAGE_NUM)) = MAX_FREESPACE - neededSpace;
+        *((unsigned *)(newDir + PAGE_SIZE - SIZE_PAGE_NUM - SIZE_NUM_ENTRY)) = 1;
         fileHandle.appendPage(newDir);
-        PageNum newDirPageNum = fileHandle.getNumberOfPages();
+        PageNum newDirPageNum = fileHandle.getNumberOfPages() - 1;
+        cout << "newDirPageNum" << newDirPageNum << endl;
 
         *((PageNum *)(dir + PAGE_SIZE - SIZE_PAGE_NUM)) = newDirPageNum;
+        fileHandle.writePage(dirNum, dir);
 
         return newPageNum;
     }
     else
     {
         *((PageNum *)(dir + numEntry * SIZE_DIR_ENTRY)) = newPageNum;
-        *((unsigned *)(dir + numEntry * SIZE_DIR_ENTRY + SIZE_PAGE_NUM)) = MAX_FREESPACE;
+        *((unsigned *)(dir + numEntry * SIZE_DIR_ENTRY + SIZE_PAGE_NUM)) = MAX_FREESPACE - neededSpace;
 
         byte *pEntryNum = dir + PAGE_SIZE - SIZE_PAGE_NUM - SIZE_NUM_ENTRY;
         *((unsigned *)(pEntryNum)) = *((unsigned *)(pEntryNum)) + 1;
-        fileHandle.writePage(dirNum, dir);
-        return newPageNum;
-    }
-
-    //If current dir page is full, add a new dir page
-    if (numEntry >= MAX_NUM_DIR_ENTRY)
-    {
-        byte newDir[PAGE_SIZE] = {0};
-        *((PageNum *)newDir) = newPageNum;
-        *((unsigned *)(newDir + SIZE_PAGE_NUM)) = MAX_FREESPACE;
-        *((PageNum *)(newDir + PAGE_SIZE - 2 * SIZE_PAGE_NUM)) = 1;
-        fileHandle.appendPage(newDir);
-        PageNum newDirPageNum = fileHandle.getNumberOfPages();
-
-        *((PageNum *)(dir + PAGE_SIZE - SIZE_PAGE_NUM)) = newDirPageNum;
-
-        return newPageNum;
-    }
-    else
-    {
-        *((PageNum *)(dir + numEntry * SIZE_DIR_ENTRY)) = newPageNum;
-        *((unsigned *)(dir + numEntry * SIZE_DIR_ENTRY + SIZE_PAGE_NUM)) = MAX_FREESPACE;
-
-        byte *pEntryNum = dir + PAGE_SIZE - SIZE_PAGE_NUM - SIZE_NUM_ENTRY;
-        *((unsigned *)(pEntryNum)) += 1;
         fileHandle.writePage(dirNum, dir);
         return newPageNum;
     }
@@ -391,5 +365,16 @@ RC RecordBasedFileManager::transformRecord(const vector<Attribute> &recordDescri
             pRet += SIZE_FIELD_LENGTH;
         }
     }
+    return SUCCESS;
+}
+
+RC RecordBasedFileManager::printHexData(const void *data, const int size)
+{
+    char *p = (char *)data;
+    for (int i = 0; i < size; i++)
+    {
+        cout << hex << (unsigned int)(unsigned char)*(p + i) << " ";
+    }
+    cout << endl << endl;
     return SUCCESS;
 }

@@ -131,6 +131,7 @@ public:
   unsigned computeSpace(const vector<Attribute> &recordDescriptor, const void *data);
   PageNum getFreePageNum(FileHandle &fileHandle, const unsigned neededSpace);
   RC transformRecord(const vector<Attribute> &recordDescriptor, const void *data, byte *transData);
+  RC printHexData(const void *data, const int size);
 
   /******************************************************************************************************************************************************************
 IMPORTANT, PLEASE READ: All methods below this comment (other than the constructor and destructor) are NOT required to be implemented for the part 1 of the project
