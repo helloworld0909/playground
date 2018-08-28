@@ -47,7 +47,11 @@ RC RecordBasedFileManager::closeFile(FileHandle &fileHandle)
 
 RC RecordBasedFileManager::insertRecord(FileHandle &fileHandle, const vector<Attribute> &recordDescriptor, const void *data, RID &rid)
 {
-    return -1;
+    unsigned neededSpace = computeSpace(recordDescriptor, data);
+    if (neededSpace > PAGE_SIZE - SIZE_NUM_RECORD)
+    {
+        return FAIL;
+    }
 }
 
 RC RecordBasedFileManager::readRecord(FileHandle &fileHandle, const vector<Attribute> &recordDescriptor, const RID &rid, void *data)
@@ -82,9 +86,7 @@ RC RecordBasedFileManager::printRecord(const vector<Attribute> &recordDescriptor
             case TypeInt:
                 cout << *((const uint32_t *)pField);
                 pField += attr.length;
-
                 break;
-
             case TypeReal:
                 cout << *((const float *)pField);
                 pField += attr.length;
@@ -117,8 +119,8 @@ unsigned RecordBasedFileManager::computeSpace(const vector<Attribute> &recordDes
     unsigned space = 0;
     unsigned bytesOfNullIndicator = computeBytesOfNullIndicator(recordDescriptor);
 
-    space += LEN_RECORD_LENGTH + LEN_RECORD_OFFSET;
-    space += bytesOfNullIndicator + recordDescriptor.size() * LEN_FIELD_LENGTH;
+    space += SIZE_RECORD_LENGTH + SIZE_RECORD_OFFSET;
+    space += bytesOfNullIndicator + recordDescriptor.size() * SIZE_FIELD_LENGTH;
     const byte *pFlag = (const byte *)data;
     const byte *pField = pFlag + bytesOfNullIndicator;
     byte mask = 0x01;
@@ -147,4 +149,62 @@ unsigned RecordBasedFileManager::computeSpace(const vector<Attribute> &recordDes
         }
     }
     return space;
+}
+
+PageNum RecordBasedFileManager::getFreePageNum(FileHandle &fileHandle, const unsigned neededSpace)
+{
+    PageNum dirNum = 0;
+    PageNum numEntry = 0;
+    byte dir[PAGE_SIZE];
+    while (true)
+    {
+        fileHandle.readPage(dirNum, dir);
+        numEntry = *((PageNum *)(dir + PAGE_SIZE - 2 * SIZE_PAGE_NUM));
+        for (int i = 0; i < numEntry; i++)
+        {
+            PageNum pageNum = *((PageNum *)(dir + SIZE_DIR_ENTRY * i));
+            unsigned freespace = *((unsigned *)(dir + SIZE_DIR_ENTRY * i + SIZE_PAGE_NUM));
+            if (freespace >= neededSpace)
+            {
+                return pageNum;
+            }
+        }
+
+        PageNum nextDirNum = *((PageNum *)(dir + PAGE_SIZE - SIZE_PAGE_NUM));
+        if (nextDirNum > 0)
+        {
+            dirNum = nextDirNum;
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    //Free page not found
+    byte newPage[PAGE_SIZE] = {0};
+    fileHandle.appendPage(newPage);
+    PageNum newPageNum = fileHandle.getNumberOfPages();
+
+    //If current dir page is full, add a new dir page
+    if (numEntry >= MAX_NUM_DIR_ENTRY)
+    {
+        byte newDir[PAGE_SIZE] = {0};
+        *((PageNum *)newDir) = newPageNum;
+        *((unsigned *)(newDir + SIZE_PAGE_NUM)) = MAX_FREESPACE;
+        *((PageNum *)(newDir + PAGE_SIZE - 2 * SIZE_PAGE_NUM)) = 1;
+        fileHandle.appendPage(newDir);
+        PageNum newDirPageNum = fileHandle.getNumberOfPages();
+
+        *((PageNum *)(dir + PAGE_SIZE - SIZE_PAGE_NUM)) = newDirPageNum;
+
+        return newPageNum;
+    }
+    else
+    {
+        *((PageNum *)(dir + numEntry * SIZE_DIR_ENTRY)) = newPageNum;
+        *((unsigned *)(dir + numEntry * SIZE_DIR_ENTRY + SIZE_PAGE_NUM)) = MAX_FREESPACE;
+        fileHandle.writePage(dirNum, dir);
+        return newPageNum;
+    }
 }
