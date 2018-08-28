@@ -61,21 +61,24 @@ RC RecordBasedFileManager::insertRecord(FileHandle &fileHandle, const vector<Att
     byte page[PAGE_SIZE];
     fileHandle.readPage(freePageNum, page);
 
-    //Write record offset and length
-    unsigned numRecord = *((unsigned *)(page + PAGE_SIZE - SIZE_NUM_RECORD));
+    //Write record offset and
     byte *tail = page + PAGE_SIZE - SIZE_NUM_RECORD;
+    unsigned numRecord = *((unsigned *)tail);
     byte *pLastRecordPos = tail - numRecord * SIZE_RECORD_POS;
-    unsigned offset = *((unsigned *)pLastRecordPos) + *((unsigned *)(pLastRecordPos + SIZE_RECORD_OFFSET));
+    unsigned offset = 0;
     unsigned length = neededSpace - SIZE_RECORD_POS;
-    *((unsigned *)pLastRecordPos - SIZE_RECORD_POS) = offset;
-    *((unsigned *)(pLastRecordPos - SIZE_RECORD_POS + SIZE_RECORD_OFFSET)) = length;
+    cout << length << endl;
+    if (numRecord > 0)
+    {
+        offset = *((unsigned *)pLastRecordPos) + *((unsigned *)(pLastRecordPos + SIZE_RECORD_OFFSET));
+    }
+    *((unsigned *)(pLastRecordPos - SIZE_RECORD_POS)) = offset;
+    *((unsigned *)(pLastRecordPos - SIZE_RECORD_LENGTH)) = length;
 
     //Write record
-    byte *record = (byte *)malloc(length);
-    RC rc = transformRecord(recordDescriptor, data, record);
-    cout << rc << endl;
-    cout << string(record, length) << endl;
-    memcpy(page + offset, record, length);
+    byte *pRecord = page + offset;
+    transformRecord(recordDescriptor, data, pRecord);
+    cout << "write record" << endl;
 
     //Num of records add one
     *((unsigned *)tail) += 1;
@@ -83,12 +86,78 @@ RC RecordBasedFileManager::insertRecord(FileHandle &fileHandle, const vector<Att
     //Update page
     fileHandle.writePage(freePageNum, page);
 
+    cout << "page updated" << endl;
+
+    //Update RID
+    rid.pageNum = freePageNum;
+    rid.slotNum = numRecord;
+
     return SUCCESS;
 }
 
 RC RecordBasedFileManager::readRecord(FileHandle &fileHandle, const vector<Attribute> &recordDescriptor, const RID &rid, void *data)
 {
-    return -1;
+    cout << "RID: " << rid.pageNum << "," << rid.slotNum << endl;
+    byte page[PAGE_SIZE];
+    fileHandle.readPage(rid.pageNum, page);
+
+    //Get offset and length
+    byte *tail = page + PAGE_SIZE - SIZE_NUM_RECORD;
+    byte *pRecordPos = tail - (rid.slotNum + 1) * SIZE_RECORD_POS;
+    unsigned offset = *((unsigned *)pRecordPos);
+    unsigned length = *((unsigned *)(pRecordPos + SIZE_RECORD_OFFSET));
+    cout << "offset: " << offset << endl;
+    cout << "length: " << length << endl;
+    if (length <= 0)
+    {
+        return FAIL;
+    }
+
+    byte *pRecord = page + offset;
+    byte *pData = (byte *)data;
+    unsigned bytesOfNullIndicator = computeBytesOfNullIndicator(recordDescriptor);
+    const byte *pFlag = (const byte *)pRecord;
+    byte mask = 0x01;
+
+    memcpy(pData, pRecord, bytesOfNullIndicator);
+    pRecord += bytesOfNullIndicator;
+    pData += bytesOfNullIndicator;
+
+    for (unsigned i = 0; i < recordDescriptor.size(); i++)
+    {
+        Attribute attr = recordDescriptor[i];
+
+        unsigned byteOffset = i / 8;
+        unsigned pos = 7 - i % 8; // First flag is at pos 8;
+        byte newMask = mask << pos;
+        bool isNull = (*(pFlag + byteOffset) & newMask) == newMask;
+
+        if (!isNull)
+        {
+            switch (attr.type)
+            {
+            case TypeInt:
+            case TypeReal:
+                pRecord += SIZE_FIELD_LENGTH;
+                memcpy(pData, pRecord, attr.length);
+                pRecord += attr.length;
+                pData += attr.length;
+                break;
+
+            case TypeVarChar:
+                uint32_t lenVar = *((uint32_t *)pRecord);
+                memcpy(pData, pRecord, lenVar + SIZE_FIELD_LENGTH);
+                pRecord += lenVar + SIZE_FIELD_LENGTH;
+                pData += lenVar + SIZE_FIELD_LENGTH;
+                break;
+            }
+        }
+        else
+        {
+            pRecord += SIZE_FIELD_LENGTH;
+        }
+    }
+    return SUCCESS;
 }
 
 RC RecordBasedFileManager::printRecord(const vector<Attribute> &recordDescriptor, const void *data)
@@ -116,7 +185,7 @@ RC RecordBasedFileManager::printRecord(const vector<Attribute> &recordDescriptor
             switch (attr.type)
             {
             case TypeInt:
-                cout << *((const uint32_t *)pField);
+                cout << *((const int32_t *)pField);
                 pField += attr.length;
                 break;
             case TypeReal:
@@ -162,7 +231,6 @@ unsigned RecordBasedFileManager::computeSpace(const vector<Attribute> &recordDes
         unsigned pos = 7 - i % 8; // First flag is at pos 8;
         byte newMask = mask << pos;
         bool isNull = (*(pFlag + byteOffset) & newMask) == newMask;
-        cout << recordDescriptor[i].name << isNull << endl;
         if (!isNull)
         {
             Attribute attr = recordDescriptor[i];
@@ -259,7 +327,6 @@ PageNum RecordBasedFileManager::getFreePageNum(FileHandle &fileHandle, const uns
     }
     else
     {
-        cout << dirNum << endl;
         *((PageNum *)(dir + numEntry * SIZE_DIR_ENTRY)) = newPageNum;
         *((unsigned *)(dir + numEntry * SIZE_DIR_ENTRY + SIZE_PAGE_NUM)) = MAX_FREESPACE;
 
@@ -270,14 +337,13 @@ PageNum RecordBasedFileManager::getFreePageNum(FileHandle &fileHandle, const uns
     }
 }
 
-RC RecordBasedFileManager::transformRecord(const vector<Attribute> &recordDescriptor, const void *data, byte *transData)
+RC RecordBasedFileManager::transformRecord(const vector<Attribute> &recordDescriptor, const void *data, byte *pRet)
 {
     unsigned bytesOfNullIndicator = computeBytesOfNullIndicator(recordDescriptor);
     const byte *pFlag = (const byte *)data;
     const byte *pField = pFlag + bytesOfNullIndicator;
     byte mask = 0x01;
 
-    byte *pRet = transData;
     memcpy(pRet, data, bytesOfNullIndicator);
     pRet += bytesOfNullIndicator;
 
@@ -298,7 +364,6 @@ RC RecordBasedFileManager::transformRecord(const vector<Attribute> &recordDescri
                 *((unsigned *)pRet) = attr.length;
                 pRet += SIZE_FIELD_LENGTH;
                 *((uint32_t *)pRet) = *((const uint32_t *)pField);
-                cout << *((const uint32_t *)pField) << endl;
                 pRet += attr.length;
                 pField += attr.length;
                 break;
@@ -307,7 +372,6 @@ RC RecordBasedFileManager::transformRecord(const vector<Attribute> &recordDescri
                 *((unsigned *)pRet) = attr.length;
                 pRet += SIZE_FIELD_LENGTH;
                 *((float *)pRet) = *((const float *)pField);
-                cout << *((const float *)pField) << endl;
                 pRet += attr.length;
                 pField += attr.length;
                 break;
@@ -319,7 +383,6 @@ RC RecordBasedFileManager::transformRecord(const vector<Attribute> &recordDescri
 
                 pField += 4;
                 string value(pField, lenVar);
-                cout << value << endl;
                 strcpy((char *)pRet, value.c_str());
                 pRet += lenVar;
                 pField += lenVar;
