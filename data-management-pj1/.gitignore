@@ -6,6 +6,7 @@
 *.o
 *.a
 rbftest*
+test*
 !*.c
 !*.h
 
