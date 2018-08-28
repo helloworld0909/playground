@@ -22,6 +22,7 @@ const unsigned MAX_FREESPACE = PAGE_SIZE - SIZE_NUM_RECORD;
 const unsigned SIZE_PAGE_NUM = sizeof(PageNum);
 const unsigned SIZE_FREESPACE = sizeof(unsigned);
 const unsigned SIZE_DIR_ENTRY = SIZE_PAGE_NUM + SIZE_FREESPACE;
+const unsigned SIZE_NUM_ENTRY = sizeof(unsigned);
 const unsigned MAX_NUM_DIR_ENTRY = (PAGE_SIZE - 2 * SIZE_PAGE_NUM) / SIZE_DIR_ENTRY;
 
 // Record ID
@@ -129,6 +130,7 @@ public:
   unsigned computeBytesOfNullIndicator(const vector<Attribute> &recordDescriptor);
   unsigned computeSpace(const vector<Attribute> &recordDescriptor, const void *data);
   PageNum getFreePageNum(FileHandle &fileHandle, const unsigned neededSpace);
+  RC transformRecord(const vector<Attribute> &recordDescriptor, const void *data, byte *transData);
 
   /******************************************************************************************************************************************************************
 IMPORTANT, PLEASE READ: All methods below this comment (other than the constructor and destructor) are NOT required to be implemented for the part 1 of the project

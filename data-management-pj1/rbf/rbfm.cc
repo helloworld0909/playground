@@ -1,6 +1,7 @@
 #include "rbfm.h"
 #include <math.h>
 #include <iostream>
+#include <cstring>
 
 RecordBasedFileManager *RecordBasedFileManager::_rbf_manager = 0;
 
@@ -48,10 +49,40 @@ RC RecordBasedFileManager::closeFile(FileHandle &fileHandle)
 RC RecordBasedFileManager::insertRecord(FileHandle &fileHandle, const vector<Attribute> &recordDescriptor, const void *data, RID &rid)
 {
     unsigned neededSpace = computeSpace(recordDescriptor, data);
+    cout << "neededSpace: " << neededSpace << endl;
     if (neededSpace > PAGE_SIZE - SIZE_NUM_RECORD)
     {
         return FAIL;
     }
+
+    PageNum freePageNum = getFreePageNum(fileHandle, neededSpace);
+    cout << "freePageNum: " << freePageNum << endl;
+
+    byte page[PAGE_SIZE];
+    fileHandle.readPage(freePageNum, page);
+
+    //Write record offset and length
+    unsigned numRecord = *((unsigned *)(page + PAGE_SIZE - SIZE_NUM_RECORD));
+    byte *tail = page + PAGE_SIZE - SIZE_NUM_RECORD;
+    byte *pLastRecordPos = tail - numRecord * SIZE_RECORD_POS;
+    unsigned offset = *((unsigned *)pLastRecordPos) + *((unsigned *)(pLastRecordPos + SIZE_RECORD_OFFSET));
+    unsigned length = neededSpace - SIZE_RECORD_POS;
+    *((unsigned *)pLastRecordPos - SIZE_RECORD_POS) = offset;
+    *((unsigned *)(pLastRecordPos - SIZE_RECORD_POS + SIZE_RECORD_OFFSET)) = length;
+
+    //Write record
+    byte *record = (byte *)malloc(length);
+    RC rc = transformRecord(recordDescriptor, data, record);
+    cout << rc << endl;
+    cout << string(record, length) << endl;
+    memcpy(page + offset, record, length);
+
+    //Num of records add one
+    *((unsigned *)tail) += 1;
+
+    //Update page
+    fileHandle.writePage(freePageNum, page);
+
     return SUCCESS;
 }
 
@@ -120,7 +151,7 @@ unsigned RecordBasedFileManager::computeSpace(const vector<Attribute> &recordDes
     unsigned space = 0;
     unsigned bytesOfNullIndicator = computeBytesOfNullIndicator(recordDescriptor);
 
-    space += SIZE_RECORD_LENGTH + SIZE_RECORD_OFFSET;
+    space += SIZE_RECORD_POS;
     space += bytesOfNullIndicator + recordDescriptor.size() * SIZE_FIELD_LENGTH;
     const byte *pFlag = (const byte *)data;
     const byte *pField = pFlag + bytesOfNullIndicator;
@@ -185,7 +216,7 @@ PageNum RecordBasedFileManager::getFreePageNum(FileHandle &fileHandle, const uns
     //Free page not found
     byte newPage[PAGE_SIZE] = {0};
     fileHandle.appendPage(newPage);
-    PageNum newPageNum = fileHandle.getNumberOfPages();
+    PageNum newPageNum = fileHandle.getNumberOfPages() - 1;
 
     //If current dir page is full, add a new dir page
     if (numEntry >= MAX_NUM_DIR_ENTRY)
@@ -205,7 +236,101 @@ PageNum RecordBasedFileManager::getFreePageNum(FileHandle &fileHandle, const uns
     {
         *((PageNum *)(dir + numEntry * SIZE_DIR_ENTRY)) = newPageNum;
         *((unsigned *)(dir + numEntry * SIZE_DIR_ENTRY + SIZE_PAGE_NUM)) = MAX_FREESPACE;
+
+        byte *pEntryNum = dir + PAGE_SIZE - SIZE_PAGE_NUM - SIZE_NUM_ENTRY;
+        *((unsigned *)(pEntryNum)) = *((unsigned *)(pEntryNum)) + 1;
         fileHandle.writePage(dirNum, dir);
         return newPageNum;
     }
+
+    //If current dir page is full, add a new dir page
+    if (numEntry >= MAX_NUM_DIR_ENTRY)
+    {
+        byte newDir[PAGE_SIZE] = {0};
+        *((PageNum *)newDir) = newPageNum;
+        *((unsigned *)(newDir + SIZE_PAGE_NUM)) = MAX_FREESPACE;
+        *((PageNum *)(newDir + PAGE_SIZE - 2 * SIZE_PAGE_NUM)) = 1;
+        fileHandle.appendPage(newDir);
+        PageNum newDirPageNum = fileHandle.getNumberOfPages();
+
+        *((PageNum *)(dir + PAGE_SIZE - SIZE_PAGE_NUM)) = newDirPageNum;
+
+        return newPageNum;
+    }
+    else
+    {
+        cout << dirNum << endl;
+        *((PageNum *)(dir + numEntry * SIZE_DIR_ENTRY)) = newPageNum;
+        *((unsigned *)(dir + numEntry * SIZE_DIR_ENTRY + SIZE_PAGE_NUM)) = MAX_FREESPACE;
+
+        byte *pEntryNum = dir + PAGE_SIZE - SIZE_PAGE_NUM - SIZE_NUM_ENTRY;
+        *((unsigned *)(pEntryNum)) += 1;
+        fileHandle.writePage(dirNum, dir);
+        return newPageNum;
+    }
+}
+
+RC RecordBasedFileManager::transformRecord(const vector<Attribute> &recordDescriptor, const void *data, byte *transData)
+{
+    unsigned bytesOfNullIndicator = computeBytesOfNullIndicator(recordDescriptor);
+    const byte *pFlag = (const byte *)data;
+    const byte *pField = pFlag + bytesOfNullIndicator;
+    byte mask = 0x01;
+
+    byte *pRet = transData;
+    memcpy(pRet, data, bytesOfNullIndicator);
+    pRet += bytesOfNullIndicator;
+
+    for (unsigned i = 0; i < recordDescriptor.size(); i++)
+    {
+        Attribute attr = recordDescriptor[i];
+
+        unsigned byteOffset = i / 8;
+        unsigned pos = 7 - i % 8; // First flag is at pos 8;
+        byte newMask = mask << pos;
+        bool isNull = (*(pFlag + byteOffset) & newMask) == newMask;
+
+        if (!isNull)
+        {
+            switch (attr.type)
+            {
+            case TypeInt:
+                *((unsigned *)pRet) = attr.length;
+                pRet += SIZE_FIELD_LENGTH;
+                *((uint32_t *)pRet) = *((const uint32_t *)pField);
+                cout << *((const uint32_t *)pField) << endl;
+                pRet += attr.length;
+                pField += attr.length;
+                break;
+
+            case TypeReal:
+                *((unsigned *)pRet) = attr.length;
+                pRet += SIZE_FIELD_LENGTH;
+                *((float *)pRet) = *((const float *)pField);
+                cout << *((const float *)pField) << endl;
+                pRet += attr.length;
+                pField += attr.length;
+                break;
+
+            case TypeVarChar:
+                unsigned lenVar = *((const uint32_t *)pField);
+                *((unsigned *)pRet) = lenVar;
+                pRet += SIZE_FIELD_LENGTH;
+
+                pField += 4;
+                string value(pField, lenVar);
+                cout << value << endl;
+                strcpy((char *)pRet, value.c_str());
+                pRet += lenVar;
+                pField += lenVar;
+                break;
+            }
+        }
+        else
+        {
+            *((unsigned *)pRet) = 0;
+            pRet += SIZE_FIELD_LENGTH;
+        }
+    }
+    return SUCCESS;
 }
