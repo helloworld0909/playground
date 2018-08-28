@@ -99,10 +99,10 @@ RC FileHandle::openFile(const string &fileName)
     {
         return FAIL;
     }
-    numOfPages = (unsigned)*(header + sizeof(IDENTIFIER));
-    readPageCounter = (unsigned)*(header + sizeof(IDENTIFIER) + 1 * sizeof(unsigned));
-    writePageCounter = (unsigned)*(header + sizeof(IDENTIFIER) + 2 * sizeof(unsigned));
-    appendPageCounter = (unsigned)*(header + sizeof(IDENTIFIER) + 3 * sizeof(unsigned));
+    numOfPages = *((unsigned *)(header + sizeof(IDENTIFIER)));
+    readPageCounter = *((unsigned *)(header + sizeof(IDENTIFIER) + 1 * sizeof(unsigned)));
+    writePageCounter = *((unsigned *)(header + sizeof(IDENTIFIER) + 2 * sizeof(unsigned)));
+    appendPageCounter = *((unsigned *)(header + sizeof(IDENTIFIER) + 3 * sizeof(unsigned)));
 
     return SUCCESS;
 }
