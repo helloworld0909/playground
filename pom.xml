@@ -10,6 +10,7 @@
     <version>0.1</version>
     <modules>
         <module>element-scala</module>
+        <module>spark-app</module>
     </modules>
     
 </project>
